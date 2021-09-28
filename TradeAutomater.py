@@ -16,7 +16,7 @@ import re
 api_id = 8648499
 api_hash = 'b635f9d93e1d51a1119029e7a392a483'
 
-phone = '9790913870'
+phone = '+919790913870'
 username = '1568072049'
 
 BANK_NIFTY = 'BankNifty'
