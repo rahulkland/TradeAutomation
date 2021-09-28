@@ -12,12 +12,13 @@ from os import environ
 # or even hardcode them (not recommended)
 from telethon import TelegramClient, events, utils
 import re
+import sys
 
-api_id = 8648499
-api_hash = 'b635f9d93e1d51a1119029e7a392a483'
+api_id = 8289565
+api_hash = '7e958c4c4ea8f0cea7485196733ca4ad'
 
-phone = '+919790913870'
-username = '1568072049'
+phone = '+919003199379'
+username = '1273828837'
 
 BANK_NIFTY = 'BankNifty'
 NIFTY = 'Nifty'
@@ -138,4 +139,16 @@ def main():
 
 
 if __name__ == '__main__':
+    userDetails = sys.argv[1]
+    if userDetails:
+        if(userDetails.lower() == 'rahul'):
+            api_id = 8289565
+            api_hash = '7e958c4c4ea8f0cea7485196733ca4ad'
+            phone = '+919003199379'
+            username = '1273828837'
+        elif(userDetails.lower() == 'srikanth'):
+            api_id = 8648499
+            api_hash = 'b635f9d93e1d51a1119029e7a392a483'
+            phone = '+919790913870'
+            username = '1568072049'
     main()
