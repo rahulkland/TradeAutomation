@@ -13,6 +13,7 @@ from os import environ
 from telethon import TelegramClient, events, utils
 import re
 import sys
+import OrderExecution
 
 api_id = 8289565
 api_hash = '7e958c4c4ea8f0cea7485196733ca4ad'
@@ -27,18 +28,20 @@ Call = 'CE'
 Buy = 'Buy'
 Sell = 'Sell'
 
-stockName = ''
+stockType = ''
 optionType = ''
 transactionType = ''
-entryPrice = 0
+suggestedEntryPrice = 0
+currentTrades = {}
 
 tradeSignalGroupName = 'Support Signals (Platinum Batch 5)'
 tradeStatusGroupName = 'Dharamik Signals Prod'
 
 messageFilter = ['Buy', 'Target']
 stockFilter = ['BankNifty', 'Nifty', '#BankNifty', '#Nifty']
+stopLossKeyWords = ['stoploss','sl','risk']
 
-weeklyExpiryMonth = {"Jan": "1", "Feb": "2", "Mar": "3", "Apr": "4", "May": "5", "Jun": "6", "Jul": "7", "Aug": "8", "Sep": "9", "Oct": "O", "Nov": "N", "Dec": "D"}
+weeklyExpiryMonth = {"JAN": "1", "FEB": "2", "MAR": "3", "APR": "4", "MAY": "5", "JUN": "6", "JUL": "7", "AUG": "8", "SEP": "9", "OCT": "O", "NOV": "N", "DEC": "D"}
 
 def main():
     # session_name = environ.get('TG_SESSION', 'session')
@@ -49,14 +52,161 @@ def main():
         newMessage = event.message.message
 
         chat_from = event.chat if event.chat else (await event.get_chat()) # telegram MAY not send the chat enity
+
         chat_title = chat_from.title
 
+        stoploss = 0
+        orderExecutedSuccessfully = False
+
         if(chat_from.title == tradeSignalGroupName):
-            isTradeMessage = filtermessage(newMessage)
-            if isTradeMessage :
-                print("Fuck Yeah, this is a trade signal")
-                await processMessage(newMessage)
     
+            # print('This is Event.Message Object ----------------------------\n \n')
+            # print(event.message)
+
+            isTradeMessage = filtermessage(newMessage)
+
+            if isTradeMessage :
+                
+                print("Fuck Yeah, this is a trade signal")
+
+                orderRequest = await processTradeSignalMessage(newMessage)
+
+                tradeStatusUpdateMessage = newMessage + '\n \n' + 'Signal Details: ' + '\n \n '
+
+                signalDetails = orderRequest.stock_name + " -- " + orderRequest.transaction_type + " -- " + str(orderRequest.stop_loss)
+
+                await sendMessagetoTelegram(signalDetails)
+                #---- Send the order for execution to the broker
+
+                orderExecutedSuccessfully = True
+
+                #---- If the order executed successfully
+                currentTrades[orderRequest.stock_name] = orderRequest
+
+                printCurrentTrades()
+                #if(orderExecutedSuccessfully):
+                    #--- Send stoploss order to Zerodha
+            else :
+                if(len(currentTrades) > 0):
+                    currentMessage = event.message.message
+
+                    print('\n')
+                    print('Current Message:')
+                    print(currentMessage)
+
+                    previousmessage = ''
+                    if(event.message.reply_to):
+                        previous_msg_id = event.message.reply_to.reply_to_msg_id
+
+                        tradeSignalGroupEntity = await client.get_entity(tradeSignalGroupName)
+
+                        previousMessageObj = await client.get_messages(tradeSignalGroupEntity, ids= previous_msg_id)
+
+                        previousmessage = previousMessageObj.message
+                        
+                        print('\n')
+                        print('Replied to Message:')
+                        print(previousmessage)
+
+                        if(filtermessage(previousmessage)):
+                            if(containsStopLoss(currentMessage) & len(currentTrades)> 0):
+                                await UpdateStopLoss(currentMessage, previousmessage)
+
+                    else:
+                        if(containsStopLoss(currentMessage) & len(currentTrades)> 0):
+                            await UpdateStopLoss(currentMessage, previousmessage)
+
+
+    
+    async def ExtractOrderInfo(message):
+        order = await processTradeSignalMessage(message)
+        return order
+        
+
+    async def UpdateStopLoss(currentMessage, previousmessage = ''):
+        stoploss = 0
+        if(previousmessage != ''):
+
+            stockName = ''
+            order = await ExtractOrderInfo(previousmessage)
+            stockName = order.stock_name
+
+            currentTrade = currentTrades[stockName]
+
+            if(currentTrade):
+                stoplossPrices = re.findall(r'[0-9]+', currentMessage)
+
+                if(len(stoplossPrices) > 0):
+                    stoploss = int(stoplossPrices[0])
+                elif (currentMessage.lower().find('CTC'.lower()) != -1 | currentMessage.find('Cost to Cost'.lower())):
+                    stoploss = order.executedPrice
+                else:
+                    stoploss = order.stop_loss
+
+                currentTrade.stop_loss = stoploss
+        
+        else:
+            if(len(currentTrades) > 1):
+                return
+            else:
+                key = list(currentTrades.keys())[0]
+                currentTrade = currentTrades[key]
+                stoplossPrices = re.findall(r'[0-9]+', currentMessage)
+
+                if(len(stoplossPrices) > 0):
+                    stoploss = int(stoplossPrices[0])
+                elif (currentMessage.lower().find('CTC'.lower()) != -1 | currentMessage.find('Cost to Cost'.lower())):
+                    stoploss = currentTrade.executedPrice
+                else:
+                    stoploss = currentTrade.stop_loss
+
+                currentTrade.stop_loss = stoploss
+
+        
+
+        if(currentTrade):
+            currentTrade.stop_loss = stoploss
+
+        printCurrentTrades()
+
+
+        # --- Send modify order for SL
+
+    def containsStopLoss(currentMessage):
+        for stoplossPhrase in stopLossKeyWords:
+                if(currentMessage.lower().find(stoplossPhrase) != -1):
+                    return True
+        return False
+
+    def printCurrentTrades():
+        print('Currently running Trades are: ')
+        for order in currentTrades:
+                trade = currentTrades[order]
+                print(trade.stock_name + "  ,  " + trade.transaction_type + " ,  SL - " + str(trade.stop_loss) + "  , Executed Price - " + str(trade.executedPrice) + " , Target Price - " + str(trade.target_price))
+
+    
+    def getStoploss(tradeSignalMessage):
+        stoploss = 0
+        trademessageLines = tradeSignalMessage.splitlines()
+        
+        stoplossline = ''
+        for line in trademessageLines:
+            if(containsStopLoss(line)):
+                stoplossline = line
+        
+        stoplossPrices = re.findall(r'[0-9]+', stoplossline)
+        
+        if(len(stoplossPrices) > 0):
+            stoploss = int(stoplossPrices[0])
+        
+        return stoploss
+
+    async def sendMessagetoTelegram(tradeStatusUpdateMessage):
+
+        tradeStatusGroupEntity= await client.get_entity(tradeStatusGroupName)
+
+        await client.send_message(entity=tradeStatusGroupEntity,message=tradeStatusUpdateMessage)
+
     # --------------------- This is to filter only the trade signal messages --------------------------
     def filtermessage(message):
         isTradeMessage = True
@@ -73,56 +223,67 @@ def main():
         return isTradeMessage & isDesiredStock
 
     # --------------------- Processing the message to extract the key attributes to be sent to the trading broker ---------
-    async def processMessage(trademessage):
+    async def processTradeSignalMessage(trademessage):
+
+        stoploss = 0
+        suggestedEntryPrice = 0        
 
         if trademessage.find(BANK_NIFTY) != -1:
-            stockName = BANK_NIFTY
+            stockType = BANK_NIFTY
         elif trademessage.find(NIFTY) != -1:
-            stockName = NIFTY
+            stockType = NIFTY
 
         if trademessage.find(Buy) != -1:
             transactionType = Buy
         else :
             transactionType = Sell
-
-        optionTypeMessage = trademessage.split(' ', 1)[0]
-        #print(optionTypeMessage)
         
         splitstrings = trademessage.split()
-        #print(splitstrings)
         
-        entryPrice = int(re.search(r'\d+', re.search('Buy At (.*) For', trademessage).group(1)).group())
+        #suggestedEntryPrice = int(re.search(r'\d+', re.search('Buy At (.*) For', trademessage).group(1)).group())
+        try:
+            suggestedEntryPrice = int(re.search(r'\d+', re.search('Buy At (.*) For', trademessage).group(1)).group())
+        except:
+            print("This trade signal doesn't have entry price - it might be an opening trade")
 
         stockSymbol = ''
+        stockName = ''
         if((len(splitstrings[1]) >= 3) and (len(splitstrings[2]) <= 3)):
             #---- Weekly Expiry
             date = splitstrings[1]
-            month = weeklyExpiryMonth.get(splitstrings[2])
+            month = weeklyExpiryMonth.get(splitstrings[2].upper())
             optionStrikePrice = splitstrings[3]
             optionType = splitstrings[4]
+            
+            if(len(date) < 2):
+                date = '0' + date
+            stockName = date + " " + splitstrings[2].upper() + " " + optionStrikePrice + " " + optionType.upper()
+            stockSymbol = stockType.upper() + '20' + month + date.rstrip(date[-2:]) + optionStrikePrice + optionType.upper()
 
-            stockSymbol = stockName.upper() + '20' + month + date.rstrip(date[-2:]) + optionStrikePrice + optionType.upper()
             #print(stockSymbol)
         else:
             #---- Monthly Expiry
             month = splitstrings[1]
             optionStrikePrice = splitstrings[2]
             optionType = splitstrings[3]
-            stockSymbol = stockName.upper() + '20' + month.upper() + optionStrikePrice + optionType.upper()
+            
+            stockName = month.upper() + " " + optionStrikePrice + " " + optionType.upper()
+            stockSymbol = stockType.upper() + '20' + month.upper() + optionStrikePrice + optionType.upper()
             #print(stockSymbol)
 
-        tradeSignal = stockSymbol + ' - ' + transactionType + ' - ' + str(entryPrice)
-        # print(stockName, optionType, transactionType, entryPrice)
+        
+        tradeSignal = stockSymbol + ' - ' + transactionType + ' - ' + str(suggestedEntryPrice)
+        # print(stockName, optionType, transactionType, suggestedEntryPrice)
         print(tradeSignal)
 
-        # await client.send_message('', tradeSignal)
+        stoploss = getStoploss(trademessage)
 
-        tradeStatusGroupEntity= await client.get_entity(tradeStatusGroupName)
-        
-        tradeStatusUpdateMessage = trademessage + '\n \n' + tradeSignal
+        if(stoploss == 0):
+            stoploss = 50
 
-        await client.send_message(entity=tradeStatusGroupEntity,message=tradeStatusUpdateMessage)
+        orderRequest = OrderExecution.OrderExecutionRequest(stockName, stockSymbol, transactionType, stoploss)
 
+        return orderRequest
         
 
     client.start(phone)
