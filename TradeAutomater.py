@@ -32,7 +32,7 @@ optionType = ''
 transactionType = ''
 entryPrice = 0
 
-tradeSignalGroupName = 'TestGroup'
+tradeSignalGroupName = 'Support Signals (Platinum Batch 5)'
 tradeStatusGroupName = 'Trade Pops'
 
 messageFilter = ['Buy', 'Target']
@@ -139,8 +139,10 @@ def main():
 
 
 if __name__ == '__main__':
-    userDetails = sys.argv[1]
-    if userDetails:
+    userDetails = ''
+    groupType = ''
+    if(len(sys.argv) >= 2):
+        userDetails = sys.argv[1]
         if(userDetails.lower() == 'rahul'):
             api_id = 8289565
             api_hash = '7e958c4c4ea8f0cea7485196733ca4ad'
@@ -151,4 +153,9 @@ if __name__ == '__main__':
             api_hash = 'b635f9d93e1d51a1119029e7a392a483'
             phone = '+919790913870'
             username = '1568072049'
+    if(len(sys.argv) >= 3):
+        groupType = sys.argv[2]
+        if (groupType.lower() == 'test'):
+            tradeSignalGroupName = 'TestGroup'
+
     main()
