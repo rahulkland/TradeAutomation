@@ -33,7 +33,7 @@ transactionType = ''
 entryPrice = 0
 
 tradeSignalGroupName = 'Support Signals (Platinum Batch 5)'
-tradeStatusGroupName = 'Trade Pops'
+tradeStatusGroupName = 'Dharamik Signals Prod'
 
 messageFilter = ['Buy', 'Target']
 stockFilter = ['BankNifty', 'Nifty', '#BankNifty', '#Nifty']
@@ -156,6 +156,7 @@ if __name__ == '__main__':
     if(len(sys.argv) >= 3):
         groupType = sys.argv[2]
         if (groupType.lower() == 'test'):
-            tradeSignalGroupName = 'TestGroup'
+            tradeSignalGroupName = 'Trade Signal Mocker'
+            tradeStatusGroupName = "Dharamik Signals Test"
 
     main()
